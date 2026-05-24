@@ -29,21 +29,42 @@ const Processor = {
 
   /**
    * Step 2: Crop + Resize + Pixel shift
+   * Crop removes edges, then resize back to original size, then shift pixels
    */
   cropResizeShift(canvas, cropPct, shiftX, shiftY) {
     const w = canvas.width, h = canvas.height;
-    const cx = Math.floor(w * cropPct / 100);
-    const cy = Math.floor(h * cropPct / 100);
+    // Calculate crop margins (remove this many pixels from each side)
+    const marginX = Math.floor(w * cropPct / 100);
+    const marginY = Math.floor(h * cropPct / 100);
+    
+    // Ensure we don't crop more than half
+    const safeMarginX = Math.min(marginX, Math.floor(w / 2) - 1);
+    const safeMarginY = Math.min(marginY, Math.floor(h / 2) - 1);
+    
+    // Cropped dimensions
+    const croppedW = w - 2 * safeMarginX;
+    const croppedH = h - 2 * safeMarginY;
+    
+    if (croppedW <= 0 || croppedH <= 0) {
+      return this.clone(canvas);
+    }
 
-    // Crop to temp canvas
+    // Create temp canvas for cropped result
     const tmp = document.createElement('canvas');
-    tmp.width = w; tmp.height = h;
+    tmp.width = w; 
+    tmp.height = h;
     const ctx = tmp.getContext('2d');
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(canvas, cx, cy, w - 2*cx, h - 2*cy, 0, 0, w, h);
+    
+    // Draw cropped region scaled to original size
+    ctx.drawImage(
+      canvas, 
+      safeMarginX, safeMarginY, croppedW, croppedH,  // source rect
+      0, 0, w, h  // dest rect (scaled to original size)
+    );
 
-    // Pixel roll
+    // Pixel roll (cyclic shift)
     if (shiftX !== 0 || shiftY !== 0) {
       const id = ctx.getImageData(0, 0, w, h);
       const src = id.data;
@@ -54,8 +75,10 @@ const Processor = {
           const ny = ((y + shiftY) % h + h) % h;
           const si = (y * w + x) * 4;
           const di = (ny * w + nx) * 4;
-          dst[di] = src[si]; dst[di+1] = src[si+1];
-          dst[di+2] = src[si+2]; dst[di+3] = src[si+3];
+          dst[di] = src[si]; 
+          dst[di+1] = src[si+1];
+          dst[di+2] = src[si+2]; 
+          dst[di+3] = src[si+3];
         }
       }
       ctx.putImageData(new ImageData(dst, w, h), 0, 0);
