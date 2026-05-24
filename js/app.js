@@ -247,6 +247,266 @@ function downloadResult() {
   a.click();
 }
 
+// ─── Edit Modal ───────────────────────────────────────────────
+let editCanvas = null;
+let editCtx = null;
+let currentAspectRatio = 'free';
+let cropSelection = null;
+let isDragging = false;
+let dragStart = { x: 0, y: 0 };
+
+function openEditModal() {
+  const sourceCanvas = resultCanvas || origCanvas;
+  if (!sourceCanvas) {
+    log('Нет изображения для редактирования', 'warn');
+    return;
+  }
+  
+  editCanvas = document.getElementById('edit-canvas');
+  editCtx = editCanvas.getContext('2d');
+  
+  editCanvas.width = sourceCanvas.width;
+  editCanvas.height = sourceCanvas.height;
+  editCtx.drawImage(sourceCanvas, 0, 0);
+  
+  document.getElementById('export-filename').value = 'wm_edited_' + Date.now();
+  document.getElementById('save-folder').value = 'Downloads';
+  currentAspectRatio = 'free';
+  updateAspectRatioButtons();
+  updateQualityOptions();
+  
+  setupCropInteraction();
+  document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').style.display = 'none';
+  cropSelection = null;
+}
+
+function setAspectRatio(ratio) {
+  currentAspectRatio = ratio;
+  updateAspectRatioButtons();
+  drawCropOverlay();
+}
+
+function updateAspectRatioButtons() {
+  document.querySelectorAll('.aspect-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.ratio === currentAspectRatio);
+  });
+}
+
+function updateQualityOptions() {
+  const format = document.getElementById('export-format').value;
+  const qualitySelect = document.getElementById('export-quality');
+  
+  if (format === 'png') {
+    qualitySelect.innerHTML = '<option value="low">Low (быстрее)</option>' +
+                              '<option value="medium" selected>Medium (баланс)</option>' +
+                              '<option value="high">High (лучшее качество)</option>';
+  } else {
+    qualitySelect.innerHTML = '<option value="low">Low (Q=60)</option>' +
+                              '<option value="medium" selected>Medium (Q=85)</option>' +
+                              '<option value="high">High (Q=95)</option>';
+  }
+}
+
+function setupCropInteraction() {
+  editCanvas.addEventListener('mousedown', onCropStart);
+  editCanvas.addEventListener('mousemove', onCropMove);
+  editCanvas.addEventListener('mouseup', onCropEnd);
+  editCanvas.addEventListener('mouseleave', onCropEnd);
+  
+  editCanvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  editCanvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  editCanvas.addEventListener('touchend', onCropEnd);
+}
+
+function getCanvasCoords(e) {
+  const rect = editCanvas.getBoundingClientRect();
+  const scaleX = editCanvas.width / rect.width;
+  const scaleY = editCanvas.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY
+  };
+}
+
+function onCropStart(e) {
+  isDragging = true;
+  const coords = getCanvasCoords(e);
+  dragStart = { x: coords.x, y: coords.y };
+  cropSelection = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 };
+}
+
+function onCropMove(e) {
+  if (!isDragging || !cropSelection) return;
+  const coords = getCanvasCoords(e);
+  cropSelection.w = coords.x - dragStart.x;
+  cropSelection.h = coords.y - dragStart.y;
+  drawCropOverlay();
+}
+
+function onCropEnd() {
+  isDragging = false;
+  if (cropSelection) {
+    if (cropSelection.w < 0) {
+      cropSelection.x += cropSelection.w;
+      cropSelection.w = Math.abs(cropSelection.w);
+    }
+    if (cropSelection.h < 0) {
+      cropSelection.y += cropSelection.h;
+      cropSelection.h = Math.abs(cropSelection.h);
+    }
+    applyAspectRatioConstraint();
+    drawCropOverlay();
+  }
+}
+
+function onTouchStart(e) {
+  e.preventDefault();
+  const touch = e.touches[0];
+  isDragging = true;
+  const coords = getCanvasCoords(touch);
+  dragStart = { x: coords.x, y: coords.y };
+  cropSelection = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 };
+}
+
+function onTouchMove(e) {
+  e.preventDefault();
+  if (!isDragging || !cropSelection) return;
+  const touch = e.touches[0];
+  const coords = getCanvasCoords(touch);
+  cropSelection.w = coords.x - dragStart.x;
+  cropSelection.h = coords.y - dragStart.y;
+  drawCropOverlay();
+}
+
+function applyAspectRatioConstraint() {
+  if (currentAspectRatio === 'free' || !cropSelection || cropSelection.w === 0 || cropSelection.h === 0) return;
+  
+  const [ratioW, ratioH] = currentAspectRatio.split(':').map(Number);
+  const targetRatio = ratioW / ratioH;
+  
+  let newW = cropSelection.w;
+  let newH = cropSelection.h;
+  
+  if (newW / newH > targetRatio) {
+    newW = newH * targetRatio;
+  } else {
+    newH = newW / targetRatio;
+  }
+  
+  cropSelection.w = newW;
+  cropSelection.h = newH;
+  
+  if (cropSelection.x + cropSelection.w > editCanvas.width) {
+    cropSelection.x = editCanvas.width - cropSelection.w;
+  }
+  if (cropSelection.y + cropSelection.h > editCanvas.height) {
+    cropSelection.y = editCanvas.height - cropSelection.h;
+  }
+  if (cropSelection.x < 0) cropSelection.x = 0;
+  if (cropSelection.y < 0) cropSelection.y = 0;
+}
+
+function drawCropOverlay() {
+  editCtx.clearRect(0, 0, editCanvas.width, editCanvas.height);
+  
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = editCanvas.width;
+  tempCanvas.height = editCanvas.height;
+  const tempCtx = tempCanvas.getContext('2d');
+  
+  const sourceCanvas = resultCanvas || origCanvas;
+  tempCtx.drawImage(sourceCanvas, 0, 0);
+  
+  editCtx.globalAlpha = 1;
+  editCtx.drawImage(tempCanvas, 0, 0);
+  
+  if (cropSelection && cropSelection.w > 0 && cropSelection.h > 0) {
+    editCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    editCtx.fillRect(0, 0, editCanvas.width, cropSelection.y);
+    editCtx.fillRect(0, cropSelection.y + cropSelection.h, editCanvas.width, editCanvas.height - cropSelection.y - cropSelection.h);
+    editCtx.fillRect(0, cropSelection.y, cropSelection.x, cropSelection.h);
+    editCtx.fillRect(cropSelection.x + cropSelection.w, cropSelection.y, editCanvas.width - cropSelection.x - cropSelection.w, cropSelection.h);
+    
+    editCtx.strokeStyle = '#fff';
+    editCtx.lineWidth = 2;
+    editCtx.setLineDash([6, 3]);
+    editCtx.strokeRect(cropSelection.x, cropSelection.y, cropSelection.w, cropSelection.h);
+    editCtx.setLineDash([]);
+    
+    editCtx.strokeStyle = '#185FA5';
+    editCtx.lineWidth = 2;
+    editCtx.strokeRect(cropSelection.x, cropSelection.y, cropSelection.w, cropSelection.h);
+  }
+}
+
+function applyCrop() {
+  if (!cropSelection || cropSelection.w <= 0 || cropSelection.h <= 0) {
+    log('Выберите область для обрезки', 'warn');
+    return;
+  }
+  
+  const x = Math.round(Math.max(0, cropSelection.x));
+  const y = Math.round(Math.max(0, cropSelection.y));
+  const w = Math.round(cropSelection.w);
+  const h = Math.round(cropSelection.h);
+  
+  const croppedCanvas = document.createElement('canvas');
+  croppedCanvas.width = w;
+  croppedCanvas.height = h;
+  const ctx = croppedCanvas.getContext('2d');
+  ctx.drawImage(editCanvas, x, y, w, h, 0, 0, w, h);
+  
+  editCanvas.width = w;
+  editCanvas.height = h;
+  editCtx.drawImage(croppedCanvas, 0, 0);
+  
+  cropSelection = null;
+  drawCropOverlay();
+  log('Обрезка применена: ' + w + '×' + h + ' px', 'ok');
+}
+
+function saveEditedImage() {
+  if (!editCanvas) {
+    log('Нет изображения для сохранения', 'warn');
+    return;
+  }
+  
+  const format = document.getElementById('export-format').value;
+  const qualityPreset = document.getElementById('export-quality').value;
+  const filename = document.getElementById('export-filename').value || 'wm_edited';
+  const folder = document.getElementById('save-folder').value || 'Downloads';
+  
+  let quality = 0.85;
+  if (format === 'jpeg') {
+    quality = qualityPreset === 'low' ? 0.60 : qualityPreset === 'medium' ? 0.85 : 0.95;
+  } else {
+    quality = qualityPreset === 'low' ? 0.6 : qualityPreset === 'medium' ? 0.8 : 1.0;
+  }
+  
+  const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
+  const dataUrl = editCanvas.toDataURL(mimeType, quality);
+  
+  const cleanCanvas = document.createElement('canvas');
+  cleanCanvas.width = editCanvas.width;
+  cleanCanvas.height = editCanvas.height;
+  const cleanCtx = cleanCanvas.getContext('2d');
+  cleanCtx.drawImage(editCanvas, 0, 0);
+  
+  const cleanDataUrl = cleanCanvas.toDataURL(mimeType, quality);
+  
+  const a = document.createElement('a');
+  a.href = cleanDataUrl;
+  a.download = filename + '.' + (format === 'png' ? 'png' : 'jpg');
+  a.click();
+  
+  log('Изображение сохранено: ' + filename + '.' + (format === 'png' ? 'png' : 'jpg'), 'ok');
+  closeEditModal();
+}
+
 // ─── Live comparison ──────────────────────────────────────────
 async function runLiveComparison() {
   if (!origCanvas) {
