@@ -253,7 +253,10 @@ let editCtx = null;
 let currentAspectRatio = 'free';
 let cropSelection = null;
 let isDragging = false;
+let dragMode = null; // 'move', 'nw', 'ne', 'sw', 'se'
 let dragStart = { x: 0, y: 0 };
+let cropStart = null;
+const HANDLE_SIZE = 10;
 
 function openEditModal() {
   const sourceCanvas = resultCanvas || origCanvas;
@@ -332,24 +335,149 @@ function getCanvasCoords(e) {
   };
 }
 
+function getDragMode(x, y) {
+  if (!cropSelection || cropSelection.w <= 0 || cropSelection.h <= 0) return null;
+  
+  const left = cropSelection.x;
+  const right = cropSelection.x + cropSelection.w;
+  const top = cropSelection.y;
+  const bottom = cropSelection.y + cropSelection.h;
+  
+  const nearLeft = Math.abs(x - left) < HANDLE_SIZE;
+  const nearRight = Math.abs(x - right) < HANDLE_SIZE;
+  const nearTop = Math.abs(y - top) < HANDLE_SIZE;
+  const nearBottom = Math.abs(y - bottom) < HANDLE_SIZE;
+  
+  if (nearTop && nearLeft) return 'nw';
+  if (nearTop && nearRight) return 'ne';
+  if (nearBottom && nearLeft) return 'sw';
+  if (nearBottom && nearRight) return 'se';
+  
+  if (x > left && x < right && y > top && y < bottom) return 'move';
+  
+  return null;
+}
+
 function onCropStart(e) {
-  isDragging = true;
   const coords = getCanvasCoords(e);
-  dragStart = { x: coords.x, y: coords.y };
-  cropSelection = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 };
+  
+  // Check if clicking on existing selection
+  const mode = getDragMode(coords.x, coords.y);
+  
+  if (mode) {
+    isDragging = true;
+    dragMode = mode;
+    dragStart = { x: coords.x, y: coords.y };
+    cropStart = { ...cropSelection };
+  } else {
+    // Start new selection
+    isDragging = true;
+    dragMode = 'new';
+    dragStart = { x: coords.x, y: coords.y };
+    cropSelection = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 };
+    cropStart = null;
+  }
 }
 
 function onCropMove(e) {
-  if (!isDragging || !cropSelection) return;
+  if (!isDragging) return;
   const coords = getCanvasCoords(e);
-  cropSelection.w = coords.x - dragStart.x;
-  cropSelection.h = coords.y - dragStart.y;
+  const dx = coords.x - dragStart.x;
+  const dy = coords.y - dragStart.y;
+  
+  if (dragMode === 'new') {
+    cropSelection.w = coords.x - dragStart.x;
+    cropSelection.h = coords.y - dragStart.y;
+  } else if (dragMode === 'move' && cropStart) {
+    cropSelection.x = cropStart.x + dx;
+    cropSelection.y = cropStart.y + dy;
+  } else if (cropStart) {
+    handleResize(dragMode, dx, dy);
+  }
+  
   drawCropOverlay();
+}
+
+function handleResize(mode, dx, dy) {
+  if (!cropStart) return;
+  
+  let newX = cropStart.x;
+  let newY = cropStart.y;
+  let newW = cropStart.w;
+  let newH = cropStart.h;
+  
+  if (mode.includes('e')) {
+    newW = Math.max(HANDLE_SIZE, cropStart.w + dx);
+  }
+  if (mode.includes('w')) {
+    const maxDx = cropStart.w - HANDLE_SIZE;
+    const constrainedDx = Math.min(dx, maxDx);
+    newX = cropStart.x + constrainedDx;
+    newW = cropStart.w - constrainedDx;
+  }
+  if (mode.includes('s')) {
+    newH = Math.max(HANDLE_SIZE, cropStart.h + dy);
+  }
+  if (mode.includes('n')) {
+    const maxDy = cropStart.h - HANDLE_SIZE;
+    const constrainedDy = Math.min(dy, maxDy);
+    newY = cropStart.y + constrainedDy;
+    newH = cropStart.h - constrainedDy;
+  }
+  
+  // Apply aspect ratio constraint during resize
+  if (currentAspectRatio !== 'free') {
+    const constrained = applyAspectRatioConstraintToBox({ x: newX, y: newY, w: newW, h: newH }, mode);
+    newX = constrained.x;
+    newY = constrained.y;
+    newW = constrained.w;
+    newH = constrained.h;
+  }
+  
+  cropSelection = { x: newX, y: newY, w: newW, h: newH };
+}
+
+function applyAspectRatioConstraintToBox(box, mode) {
+  if (currentAspectRatio === 'free' || box.w === 0 || box.h === 0) return box;
+  
+  const [ratioW, ratioH] = currentAspectRatio.split(':').map(Number);
+  const targetRatio = ratioW / ratioH;
+  
+  let newW = box.w;
+  let newH = box.h;
+  let newX = box.x;
+  let newY = box.y;
+  
+  // Determine which dimension to constrain based on drag mode
+  const isHorizontal = mode.includes('e') || mode.includes('w');
+  const isVertical = mode.includes('s') || mode.includes('n');
+  
+  if (isHorizontal && !isVertical) {
+    newH = newW / targetRatio;
+    if (mode.includes('n')) newY = box.y + (box.h - newH);
+  } else if (isVertical && !isHorizontal) {
+    newW = newH * targetRatio;
+    if (mode.includes('w')) newX = box.x + (box.w - newW);
+  } else {
+    // Corner drag - maintain ratio from the fixed corner
+    if (newW / newH > targetRatio) {
+      newW = newH * targetRatio;
+      if (mode.includes('w')) newX = box.x + (box.w - newW);
+    } else {
+      newH = newW / targetRatio;
+      if (mode.includes('n')) newY = box.y + (box.h - newH);
+    }
+  }
+  
+  return { x: newX, y: newY, w: Math.max(HANDLE_SIZE, newW), h: Math.max(HANDLE_SIZE, newH) };
 }
 
 function onCropEnd() {
   isDragging = false;
-  if (cropSelection) {
+  dragMode = null;
+  
+  if (cropSelection && cropSelection.w !== 0) {
+    // Normalize negative dimensions
     if (cropSelection.w < 0) {
       cropSelection.x += cropSelection.w;
       cropSelection.w = Math.abs(cropSelection.w);
@@ -358,27 +486,54 @@ function onCropEnd() {
       cropSelection.y += cropSelection.h;
       cropSelection.h = Math.abs(cropSelection.h);
     }
+    
+    // Apply aspect ratio and bounds
     applyAspectRatioConstraint();
     drawCropOverlay();
   }
+  
+  cropStart = null;
 }
 
 function onTouchStart(e) {
   e.preventDefault();
   const touch = e.touches[0];
-  isDragging = true;
   const coords = getCanvasCoords(touch);
-  dragStart = { x: coords.x, y: coords.y };
-  cropSelection = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 };
+  
+  const mode = getDragMode(coords.x, coords.y);
+  
+  if (mode) {
+    isDragging = true;
+    dragMode = mode;
+    dragStart = { x: coords.x, y: coords.y };
+    cropStart = { ...cropSelection };
+  } else {
+    isDragging = true;
+    dragMode = 'new';
+    dragStart = { x: coords.x, y: coords.y };
+    cropSelection = { x: dragStart.x, y: dragStart.y, w: 0, h: 0 };
+    cropStart = null;
+  }
 }
 
 function onTouchMove(e) {
   e.preventDefault();
-  if (!isDragging || !cropSelection) return;
+  if (!isDragging) return;
   const touch = e.touches[0];
   const coords = getCanvasCoords(touch);
-  cropSelection.w = coords.x - dragStart.x;
-  cropSelection.h = coords.y - dragStart.y;
+  const dx = coords.x - dragStart.x;
+  const dy = coords.y - dragStart.y;
+  
+  if (dragMode === 'new') {
+    cropSelection.w = coords.x - dragStart.x;
+    cropSelection.h = coords.y - dragStart.y;
+  } else if (dragMode === 'move' && cropStart) {
+    cropSelection.x = cropStart.x + dx;
+    cropSelection.y = cropStart.y + dy;
+  } else if (cropStart) {
+    handleResize(dragMode, dx, dy);
+  }
+  
   drawCropOverlay();
 }
 
@@ -425,12 +580,14 @@ function drawCropOverlay() {
   editCtx.drawImage(tempCanvas, 0, 0);
   
   if (cropSelection && cropSelection.w > 0 && cropSelection.h > 0) {
+    // Darken outside area
     editCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     editCtx.fillRect(0, 0, editCanvas.width, cropSelection.y);
     editCtx.fillRect(0, cropSelection.y + cropSelection.h, editCanvas.width, editCanvas.height - cropSelection.y - cropSelection.h);
     editCtx.fillRect(0, cropSelection.y, cropSelection.x, cropSelection.h);
     editCtx.fillRect(cropSelection.x + cropSelection.w, cropSelection.y, editCanvas.width - cropSelection.x - cropSelection.w, cropSelection.h);
     
+    // Draw border
     editCtx.strokeStyle = '#fff';
     editCtx.lineWidth = 2;
     editCtx.setLineDash([6, 3]);
@@ -440,6 +597,19 @@ function drawCropOverlay() {
     editCtx.strokeStyle = '#185FA5';
     editCtx.lineWidth = 2;
     editCtx.strokeRect(cropSelection.x, cropSelection.y, cropSelection.w, cropSelection.h);
+    
+    // Draw corner handles
+    editCtx.fillStyle = '#185FA5';
+    const handles = [
+      { x: cropSelection.x, y: cropSelection.y },
+      { x: cropSelection.x + cropSelection.w, y: cropSelection.y },
+      { x: cropSelection.x, y: cropSelection.y + cropSelection.h },
+      { x: cropSelection.x + cropSelection.w, y: cropSelection.y + cropSelection.h }
+    ];
+    
+    handles.forEach(h => {
+      editCtx.fillRect(h.x - HANDLE_SIZE/2, h.y - HANDLE_SIZE/2, HANDLE_SIZE, HANDLE_SIZE);
+    });
   }
 }
 
