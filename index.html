@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Watermark Robustness Research Stand</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="3"/>
+          <path d="M9 9h6M9 12h6M9 15h4"/>
+        </svg>
+        <span>WM Research</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item active" data-tab="pipeline" onclick="switchTab('pipeline',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          Пайплайн
+        </a>
+        <a class="nav-item" data-tab="comparison" onclick="switchTab('comparison',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/></svg>
+          Сравнение
+        </a>
+        <a class="nav-item" data-tab="report" onclick="switchTab('report',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Отчёт
+        </a>
+        <a class="nav-item" data-tab="about" onclick="switchTab('about',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          О проекте
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="status-indicator" id="status-dot">
+          <span class="dot idle"></span>
+          <span id="status-text">Готов</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-content">
+
+      <!-- ═══════════════ PIPELINE TAB ═══════════════ -->
+      <div id="tab-pipeline" class="tab-pane active">
+        <div class="page-header">
+          <h1>Пайплайн атаки</h1>
+          <p>Последовательная обработка изображения — 5 независимо настраиваемых шагов</p>
+        </div>
+
+        <div class="two-col">
+          <div class="col-left">
+
+            <div class="card">
+              <div class="card-label">Загрузка изображения</div>
+              <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                <div id="upload-placeholder">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+                    <rect x="3" y="3" width="18" height="18" rx="3"/>
+                    <path d="M8 12l4-4 4 4M12 8v8"/>
+                  </svg>
+                  <p>Перетащите изображение или нажмите</p>
+                  <span class="hint">PNG, JPG, WEBP · до 20 МБ</span>
+                </div>
+                <div id="upload-preview" style="display:none">
+                  <img id="preview-orig" alt="оригинал" />
+                  <div class="img-meta" id="img-meta">—</div>
+                </div>
+              </div>
+              <input type="file" id="file-input" accept="image/*" style="display:none">
+            </div>
+
+            <div class="card" style="margin-top:14px;">
+              <div class="card-label">Шаги обработки</div>
+              <div class="steps-list">
+                <div class="step-item active" id="step-0" onclick="selectStep(0)">
+                  <div class="step-num">01</div>
+                  <div class="step-body">
+                    <div class="step-name">LSB-рандомизация</div>
+                    <div class="step-desc">XOR на младший бит каждого канала RGB</div>
+                  </div>
+                  <div class="step-check" id="check-0"></div>
+                </div>
+                <div class="step-item" id="step-1" onclick="selectStep(1)">
+                  <div class="step-num">02</div>
+                  <div class="step-body">
+                    <div class="step-name">Кроп + Ресайз + Сдвиг</div>
+                    <div class="step-desc">Обрезка краёв, масштаб, пиксельный roll</div>
+                  </div>
+                  <div class="step-check" id="check-1"></div>
+                </div>
+                <div class="step-item" id="step-2" onclick="selectStep(2)">
+                  <div class="step-num">03</div>
+                  <div class="step-body">
+                    <div class="step-name">JPEG-пересжатие</div>
+                    <div class="step-desc">Деструктивное сжатие Q30–95</div>
+                  </div>
+                  <div class="step-check" id="check-2"></div>
+                </div>
+                <div class="step-item" id="step-3" onclick="selectStep(3)">
+                  <div class="step-num">04</div>
+                  <div class="step-body">
+                    <div class="step-name">Color Jitter</div>
+                    <div class="step-desc">Случайный шум ±N на каждый канал</div>
+                  </div>
+                  <div class="step-check" id="check-3"></div>
+                </div>
+                <div class="step-item" id="step-4" onclick="selectStep(4)">
+                  <div class="step-num">05</div>
+                  <div class="step-body">
+                    <div class="step-name">Upscale → Downscale</div>
+                    <div class="step-desc">Бикубика x2–x4 → оригинальный размер</div>
+                  </div>
+                  <div class="step-check" id="check-4"></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="col-right">
+
+            <div class="card" id="params-card">
+              <div class="card-label">Параметры шага: <span id="active-step-name">LSB-рандомизация</span></div>
+
+              <div id="params-lsb" class="params-group">
+                <div class="param-row">
+                  <label>Seed (ключ XOR)</label>
+                  <input type="range" min="1" max="9999" value="42" id="p-seed" oninput="document.getElementById('v-seed').textContent=this.value">
+                  <span class="val" id="v-seed">42</span>
+                </div>
+                <div class="param-hint">Один и тот же seed восстанавливает оригинал. Разные seeds дают разные паттерны.</div>
+              </div>
+
+              <div id="params-crop" class="params-group" style="display:none">
+                <div class="param-row">
+                  <label>Кроп (%)</label>
+                  <input type="range" min="1" max="10" value="3" id="p-crop" oninput="document.getElementById('v-crop').textContent=this.value+'%'">
+                  <span class="val" id="v-crop">3%</span>
+                </div>
+                <div class="param-row">
+                  <label>Сдвиг X (px)</label>
+                  <input type="range" min="0" max="15" value="2" id="p-shiftx" oninput="document.getElementById('v-shiftx').textContent=this.value+'px'">
+                  <span class="val" id="v-shiftx">2px</span>
+                </div>
+                <div class="param-row">
+                  <label>Сдвиг Y (px)</label>
+                  <input type="range" min="0" max="15" value="2" id="p-shifty" oninput="document.getElementById('v-shifty').textContent=this.value+'px'">
+                  <span class="val" id="v-shifty">2px</span>
+                </div>
+                <div class="param-hint">Кроп нарушает пространственные паттерны. Сдвиг смещает весь массив пикселей циклически.</div>
+              </div>
+
+              <div id="params-jpeg" class="params-group" style="display:none">
+                <div class="param-row">
+                  <label>JPEG Quality</label>
+                  <input type="range" min="30" max="95" value="70" id="p-quality" oninput="document.getElementById('v-quality').textContent=this.value">
+                  <span class="val" id="v-quality">70</span>
+                </div>
+                <div class="param-hint">Q &lt; 60: заметные артефакты. Q 60–75: компромисс. Q &gt; 85: слабое воздействие на паттерны.</div>
+              </div>
+
+              <div id="params-jitter" class="params-group" style="display:none">
+                <div class="param-row">
+                  <label>Delta ±N</label>
+                  <input type="range" min="1" max="10" value="1" id="p-delta" oninput="document.getElementById('v-delta').textContent='±'+this.value">
+                  <span class="val" id="v-delta">±1</span>
+                </div>
+                <div class="param-hint">±1–2: невидимо глазу, PSNR > 48 dB. ±5+: заметный шум.</div>
+              </div>
+
+              <div id="params-upscale" class="params-group" style="display:none">
+                <div class="param-row">
+                  <label>Коэффициент</label>
+                  <input type="range" min="2" max="4" value="2" id="p-upscale" oninput="document.getElementById('v-upscale').textContent='x'+this.value">
+                  <span class="val" id="v-upscale">x2</span>
+                </div>
+                <div class="param-hint">Бикубическая интерполяция перегенерирует промежуточные пиксели — водяной знак деградирует при каждом проходе.</div>
+              </div>
+            </div>
+
+            <div class="btn-row" style="margin-top:12px;">
+              <button class="btn primary" onclick="runPipeline()" id="btn-run">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Запустить пайплайн
+              </button>
+              <button class="btn" onclick="runStep()" id="btn-step">Применить шаг</button>
+              <button class="btn danger" onclick="resetAll()">Сбросить</button>
+            </div>
+
+            <div class="progress-track"><div class="progress-fill" id="progress"></div></div>
+            <div class="log-console" id="log"></div>
+
+            <div id="result-area" style="display:none">
+              <div class="compare-strip">
+                <div class="compare-box">
+                  <img id="prev-before" alt="до" />
+                  <div class="compare-label">Оригинал</div>
+                </div>
+                <div class="compare-box">
+                  <img id="prev-after" alt="после" />
+                  <div class="compare-label" id="after-label">После обработки</div>
+                </div>
+              </div>
+
+              <div class="metrics-row">
+                <div class="metric-card" id="mc-psnr">
+                  <div class="m-label">PSNR</div>
+                  <div class="m-value" id="mv-psnr">—</div>
+                  <div class="m-sub">dB · выше = лучше</div>
+                </div>
+                <div class="metric-card" id="mc-ssim">
+                  <div class="m-label">SSIM</div>
+                  <div class="m-value" id="mv-ssim">—</div>
+                  <div class="m-sub">0..1 · ближе к 1</div>
+                </div>
+                <div class="metric-card" id="mc-mae">
+                  <div class="m-label">MAE</div>
+                  <div class="m-value" id="mv-mae">—</div>
+                  <div class="m-sub">пиксель · ниже = лучше</div>
+                </div>
+                <div class="metric-card" id="mc-size">
+                  <div class="m-label">Размер</div>
+                  <div class="m-value" id="mv-size">—</div>
+                  <div class="m-sub" id="mv-size-sub">КБ</div>
+                </div>
+              </div>
+
+              <div class="btn-row" style="margin-top:12px;">
+                <button class="btn success" onclick="downloadResult()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Скачать результат
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════ COMPARISON TAB ═══════════════ -->
+      <div id="tab-comparison" class="tab-pane" style="display:none">
+        <div class="page-header">
+          <h1>Сравнение методов</h1>
+          <p>Каждый метод применяется к одному изображению — визуально и по метрикам</p>
+        </div>
+
+        <div class="card">
+          <div class="card-label">PSNR по методам — визуальные искажения</div>
+          <div class="chart-wrap" id="chart-psnr">
+            <div class="bar-row"><span class="bar-name">LSB XOR (seed=42)</span><div class="bar-track"><div class="bar-fill blue" style="width:95%"><span>~55 dB</span></div></div></div>
+            <div class="bar-row"><span class="bar-name">Color jitter ±1</span><div class="bar-track"><div class="bar-fill green" style="width:87%"><span>~50 dB</span></div></div></div>
+            <div class="bar-row"><span class="bar-name">Color jitter ±3</span><div class="bar-track"><div class="bar-fill green" style="width:73%"><span>~42 dB</span></div></div></div>
+            <div class="bar-row"><span class="bar-name">Кроп 3% + ресайз</span><div class="bar-track"><div class="bar-fill green" style="width:78%"><span>~45 dB</span></div></div></div>
+            <div class="bar-row"><span class="bar-name">Upscale x2</span><div class="bar-track"><div class="bar-fill amber" style="width:70%"><span>~40 dB</span></div></div></div>
+            <div class="bar-row"><span class="bar-name">JPEG Q=80</span><div class="bar-track"><div class="bar-fill amber" style="width:65%"><span>~37 dB</span></div></div></div>
+            <div class="bar-row"><span class="bar-name">JPEG Q=70</span><div class="bar-track"><div class="bar-fill amber" style="width:58%"><span>~33 dB</span></div></div></div>
+            <div class="bar-row"><span class="bar-name">JPEG Q=60</span><div class="bar-track"><div class="bar-fill red" style="width:45%"><span>~26 dB</span></div></div></div>
+            <div class="bar-row"><span class="bar-name">Полный пайплайн</span><div class="bar-track"><div class="bar-fill red" style="width:35%"><span>~20 dB</span></div></div></div>
+          </div>
+        </div>
+
+        <div class="two-col" style="margin-top:14px;">
+          <div class="card">
+            <div class="card-label">Визуальная незаметность vs Эффективность</div>
+            <div class="trade-grid">
+              <div class="trade-cell green">
+                <div class="trade-title">Невидимые атаки</div>
+                <div class="trade-body">LSB XOR<br>Color jitter ±1<br><span class="trade-meta">SSIM > 0.99 · PSNR > 48 dB</span></div>
+              </div>
+              <div class="trade-cell amber">
+                <div class="trade-title">Умеренные атаки</div>
+                <div class="trade-body">JPEG Q=75<br>Upscale x2<br><span class="trade-meta">SSIM 0.92–0.97</span></div>
+              </div>
+              <div class="trade-cell red">
+                <div class="trade-title">Агрессивные атаки</div>
+                <div class="trade-body">JPEG Q=60<br>Полный пайплайн<br><span class="trade-meta">SSIM &lt; 0.90</span></div>
+              </div>
+              <div class="trade-cell blue">
+                <div class="trade-title">Вывод исследования</div>
+                <div class="trade-body">SynthID устойчив к невидимым атакам. Деградация только при заметных искажениях.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-label">Live-сравнение на вашем фото</div>
+            <p class="card-desc">Загрузите изображение на вкладке «Пайплайн», затем запустите сравнение всех методов автоматически.</p>
+            <button class="btn primary" onclick="runLiveComparison()" id="btn-live-cmp" style="margin-top:12px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Запустить live-сравнение
+            </button>
+            <div id="live-cmp-grid" style="margin-top:14px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════ REPORT TAB ═══════════════ -->
+      <div id="tab-report" class="tab-pane" style="display:none">
+        <div class="page-header">
+          <h1>Отчёт исследования</h1>
+          <p>Автоматически формируется после обработки изображения</p>
+        </div>
+
+        <div id="report-empty" class="card empty-state">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <p>Обработайте изображение на вкладке «Пайплайн»</p>
+        </div>
+
+        <div id="report-body" style="display:none">
+          <div class="card">
+            <div class="card-label">Параметры эксперимента</div>
+            <table class="report-table" id="report-params-table"></table>
+          </div>
+          <div class="card" style="margin-top:14px;">
+            <div class="card-label">Метрики качества</div>
+            <div class="metrics-row" id="report-metrics"></div>
+          </div>
+          <div class="card" style="margin-top:14px;">
+            <div class="card-label">Интерпретация результатов</div>
+            <div id="report-interpretation" class="report-text"></div>
+          </div>
+          <div class="card" style="margin-top:14px;">
+            <div class="card-label">Экспорт</div>
+            <div class="btn-row">
+              <button class="btn" onclick="exportReport()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Скачать HTML-отчёт
+              </button>
+              <button class="btn" onclick="copyReport()">Копировать текст</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════ ABOUT TAB ═══════════════ -->
+      <div id="tab-about" class="tab-pane" style="display:none">
+        <div class="page-header">
+          <h1>О проекте</h1>
+          <p>Исследовательский стенд для изучения устойчивости водяных знаков</p>
+        </div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-label">Что исследуется</div>
+            <div class="about-block">
+              <p>Проект анализирует устойчивость невидимых цифровых водяных знаков (в частности, Google SynthID) к типичным операциям обработки изображений.</p>
+              <p style="margin-top:10px;">SynthID встраивает водяной знак в частотные компоненты изображения. В отличие от стеганографии на основе LSB, он выживает при JPEG-сжатии, ресайзе и скриншотах.</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-label">Стек</div>
+            <div class="tech-list">
+              <div class="tech-item"><span class="tech-badge">HTML5</span> Canvas API — обработка пикселей в браузере</div>
+              <div class="tech-item"><span class="tech-badge">JS</span> Vanilla JS — без зависимостей</div>
+              <div class="tech-item"><span class="tech-badge">CSS</span> CSS-переменные, адаптивная сетка</div>
+              <div class="tech-item"><span class="tech-badge">Метрики</span> PSNR, SSIM, MAE — вычисляются локально</div>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:14px;">
+          <div class="card-label">Методология</div>
+          <div class="method-grid">
+            <div class="method-item">
+              <div class="method-num">01</div>
+              <div class="method-name">LSB XOR</div>
+              <div class="method-desc">Модифицирует бит 0 каждого канала RGB. Визуально идентично оригиналу (PSNR ~55 dB), но меняет бинарные паттерны водяного знака.</div>
+            </div>
+            <div class="method-item">
+              <div class="method-num">02</div>
+              <div class="method-name">Кроп + Ресайз</div>
+              <div class="method-desc">Удаляет N% краёв, масштабирует обратно бикубикой. Нарушает пространственное расположение паттернов водяного знака.</div>
+            </div>
+            <div class="method-item">
+              <div class="method-num">03</div>
+              <div class="method-name">JPEG-пересжатие</div>
+              <div class="method-desc">DCT-квантование разрушает высокочастотные компоненты. При Q=60–70 паттерны водяного знака деградируют ниже порога детекции.</div>
+            </div>
+            <div class="method-item">
+              <div class="method-num">04</div>
+              <div class="method-name">Color Jitter</div>
+              <div class="method-desc">Добавляет случайный шум ±N. При ±1–2 невидимо глазу, при этом изменяет статистику цветовых каналов.</div>
+            </div>
+            <div class="method-item">
+              <div class="method-num">05</div>
+              <div class="method-name">Upscale → Downscale</div>
+              <div class="method-desc">Интерполяция при увеличении смешивает пиксели, создавая новые промежуточные значения. Повторный ресайз вниз разрушает паттерны.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="js/processor.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
